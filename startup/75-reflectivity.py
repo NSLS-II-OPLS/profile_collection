@@ -531,7 +531,34 @@ def reflection_scan_old(scan_param, i, detector='lamda_det', md={}, tilt_stage=F
 
         yield from bps.mv(shutter, 0)
         
+
+
+def automate_attenuator(alphai, precount_time=1,detector="lambda_det"):
     
-
-
-
+    # Set the exposure time to for the pre-count
+    yield from det_exposure_time(precount_time, precount_time)
+    # Take the pre-count data
+    yield from bps.mv(shutter, 1)
+    ret = yield from bps.trigger_and_read(area_dets, name='precount')
+    yield from bps.mv(shutter, 0)
+    
+    if ret is None:
+        print('No count on the detector')
+    else:
+        # Read the maximum count on a pixel from the detector
+        i_total = ret['%s_stats2_total'%detector]['value']
+        
+        i_max = ret['%s_stats5_max'%detector]['value']
+        
+        att_keys = list(att_fact_selected.keys())
+        if i_max > att_fact_selected[att_keys[-1]] or i_total > 1e5:
+            abs_new_value = len(att_keys) - 1
+            yield from bps.mv(abs2, abs_new_value)
+        elif i_total < 1e4:
+            yield from bps.mv(abs2, 0)
+        else:
+            for i in range(len(att_keys)-1, 0, -1):
+                if i_total < att_keys[i] and i_total > att_keys[i-1]:
+                    yield from bps.mv(abs2, i)
+                    yield from bps.sleep(2)
+                    break
