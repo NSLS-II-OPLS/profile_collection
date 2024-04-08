@@ -533,8 +533,8 @@ def reflection_scan_old(scan_param, i, detector='lamda_det', md={}, tilt_stage=F
         
 
 
-def automate_attenuator(alphai, precount_time=1,detector="lambda_det"):
-    
+def automate_attenuator(alphai, precount_time=1,detector="lambda_det", upper_limit=1e6, total_threshold=[1e3, 1e5], abs_range =[1, 6]):
+
     # Set the exposure time to for the pre-count
     yield from det_exposure_time(precount_time, precount_time)
     # Take the pre-count data
@@ -546,19 +546,24 @@ def automate_attenuator(alphai, precount_time=1,detector="lambda_det"):
         print('No count on the detector')
     else:
         # Read the maximum count on a pixel from the detector
-        i_total = ret['%s_stats2_total'%detector]['value']
-        
-        i_max = ret['%s_stats5_max'%detector]['value']
-        
+        i_total = ret['%s_stats2_total'%detector]['value'] # Total intensity of i2
+
+        i_max = ret['%s_stats5_max'%detector]['value'] # Maximum intensity of one pixel
+
         att_keys = list(att_fact_selected.keys())
-        if i_max > att_fact_selected[att_keys[-1]] or i_total > 1e5:
-            abs_new_value = len(att_keys) - 1
-            yield from bps.mv(abs2, abs_new_value)
-        elif i_total < 1e4:
-            yield from bps.mv(abs2, 0)
+
+        abs2_current_position = abs2.position
+
+        if i_max > upper_limit: # check the max_int for a pixel
+            abs_target_position = abs_range[1]
+        elif i_total > therothold[1]: #check the roi intensity
+            abs_target_position = abs2_current_position+1
         else:
-            for i in range(len(att_keys)-1, 0, -1):
-                if i_total < att_keys[i] and i_total > att_keys[i-1]:
-                    yield from bps.mv(abs2, i)
-                    yield from bps.sleep(2)
-                    break
+            # check lower limit of abs_range
+            if abs2_current_position - abs_range[0] < tolerance (0.1): # stay at the current
+                abs_target_position = abs2_current_position
+                # TODO here for exposure_time increase
+            else:
+                abs_target_position = abs2_current_position-1
+        yield from bps.mv(abs2, abs_target_position)
+        yield from bps.sleep(2)
