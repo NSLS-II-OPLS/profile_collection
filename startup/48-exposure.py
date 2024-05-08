@@ -16,8 +16,10 @@ def det_set_exposure(detectors, exposure_time, exposure_period = None, exposure_
     yield from bps.mov(exposure_time_signal, exposure_time)
 
     for det in detectors:
+
         # if det in [pilatus100k, pilatus300k, lambda_det]:
         if det in [pilatus100k, pilatus100kA, pilatus300k, lambda_det, pilatus1m]:
+
             try:
                 yield from bps.mov(
                 det.cam.acquire_time, exposure_time,
@@ -55,6 +57,5 @@ def det_test(detectors=None):
         yield from bps.sleep(0.1)  
 
 
-detectors_all = [quadem, lambda_det, pilatus100k, pilatus1m, xs]
+detectors_all = [quadem, lambda_det, pilatus300k, pilatus100kA, pilatus1m, xs]
 
-# [quadem, lambda_det, pilatus100k, pilatus300k, pilatus100kA, pilatus1m, xs]

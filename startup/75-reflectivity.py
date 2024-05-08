@@ -1,10 +1,12 @@
 # global attenuation_factor_signal, attenuator_name_signal, default_attenuation # exposure_time, 
 # attenuator_name_signal = Signal(name='attenuator_name', value='abs1',kind='normal')
 
+
 # attenuation_factor_signal = Signal(name='attenuation', value=1e-7,kind='normal')
 # default_attenuation = Signal(name='default-attenuation', value=1e-7)
 import time
-def reflection_scan_full(scan_param, md=None, detector=lambda_det, tilt_stage=False, stth_corr_par=None, usekibron = False, trough = None, compress = False, target_pressure=0):
+def reflection_scan_full(scan_param, md=None, detector=lambda_det, tilt_stage=False, stth_corr_par=None, usekibron = False, trough = None, auto_atten = False, compress = False, target_pressure=0):
+
     """
     Macros to set all the parameters in order to record all the required information for further analysis,
     such as the attenuation factors, detector='lambda_det'
@@ -61,7 +63,7 @@ def reflection_scan_full(scan_param, md=None, detector=lambda_det, tilt_stage=Fa
             print('%sst set starting'%i)
             yield from bps.sleep(3) 
     #      print(scan_param)
-            yield from reflection_scan(scan_param,i, detector=detector, md=md, tilt_stage=tilt_stage, usekibron = usekibron, trough = trough, compress = compress, target_pressure=target_pressure, x2_nominal=x2_nominal,blocky_nominal=blocky_nominal)                      
+            yield from reflection_scan(scan_param,i, detector=detector, md=md, tilt_stage=tilt_stage, auto_atten=auto_atten, usekibron = usekibron, trough = trough, compress = compress, target_pressure=target_pressure, x2_nominal=x2_nominal,blocky_nominal=blocky_nominal)                      
             print('%sst set done'%i)
             # yield from bps.close_run()
 
@@ -85,8 +87,9 @@ all_area_dets = [quadem, lambda_det, AD1, AD2, o2_per, chiller_T, ls]
 
 
 @bpp.stage_decorator(all_area_dets)
-def reflection_scan(scan_param, i, detector=lambda_det, md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, trough = None, compress = False, target_pressure=0):
-        
+
+def reflection_scan(scan_param, i, detector=lamda_det, md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, auto_atten = False, trough = None, compress = False, target_pressure=0):
+
     alpha_start =   scan_param["start"][i]
     alpha_stop =    scan_param["stop"][i]
     number_points = scan_param["n"][i]
@@ -199,10 +202,18 @@ def reflection_scan(scan_param, i, detector=lambda_det, md={}, tilt_stage=False,
         #                                     [attenuation_factor_signal] +
         #                                     [attenuator_name_signal] +
         #                                     [exposure_time_signal],name='precount')
-        yield from bps.trigger_and_read([quadem],name='precount')
-        # print(time.time()-start_time)
+
+
+
+        # yield from bps.trigger_and_read([quadem],name='precount')
+        if auto_atten:
+            print('Start running automate attenuator')
+            yield from automate_attenuator() ## set the abs2 based an automatica attenuation macro.
+        else:
+            yield from bps.trigger_and_read([quadem],name='precount')
         yield from det_set_exposure([detector, quadem], exposure_time=exp_time, exposure_number = 1)
-        # print(time.time()-start_time)
+    
+
         yield from bps.trigger_and_read(all_area_dets +
                                             [geo] + 
                                             [S2] +
@@ -233,7 +244,7 @@ def calc_att_from_ai(alphai):
         return 0
 
 # THIS DOES A PRECOUNT WITH A HIGH ATTUNATOR VALUE TO DETERMINE THE BEST ATTENUATOR TO USE
-def calc_att_auto(alphai, precount_time=1,detector="lambda_det"):
+def calc_att_auto(alphai, precount_time=1,detector=lambda_det):
     # Move the default attenuator in for the pre-count based on the value of attenuation define in default_attenuation
     def_att = yield from put_default_absorbers(energy.energy.position,
                                                default_attenuation=default_attenuation.get())
@@ -247,7 +258,7 @@ def calc_att_auto(alphai, precount_time=1,detector="lambda_det"):
         print('No count on the detector')
     else:
         # Read the maximum count on a pixel from the detector
-        i_max = ret['%s_stats4_max_value'%detector]['value']
+        i_max = ret['%s_stats4_max_value'%detector.name]['value']
         # look at the maximum count of the pre-count and adjust the default attenuation, can do multiple iterations
         while (i_max < 100 or i_max > 40000) and default_attenuation.get() < 1:
             if i_max > 40000:
@@ -264,7 +275,7 @@ def calc_att_auto(alphai, precount_time=1,detector="lambda_det"):
             yield from bps.mv(shutter, 0)
                                     
             # Re-read the maximum count on a pixel from the detector
-            i_max = ret['%s_stats4_max_value'%detector]['value']                    
+            i_max = ret['%s_stats4_max_value'%detector.name]['value']                    
         # Adjust the absorbers to avoid saturation of detector
         best_at, attenuation_factor, best_att_name = yield from calculate_and_set_absorbers(energy=energy.energy.position,
                                                                                             i_max=i_max,
@@ -533,34 +544,42 @@ def reflection_scan_old(scan_param, i, detector='lamda_det', md={}, tilt_stage=F
         
 
 
-def automate_attenuator(alphai, precount_time=1,detector="lambda_det", upper_limit=1e6, total_threshold=[1e3, 1e5], abs_range =[1, 6]):
+def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, total_threshold=[1e3, 1e5], abs_range =[1, 6]):
+    '''
+    Developed by Juan and Honghu.
+    
+    '''
 
     # Set the exposure time to for the pre-count
-    yield from det_exposure_time(precount_time, precount_time)
+    # yield from det_exposure_time(precount_time, precount_time)
+    yield from det_set_exposure([detector,quadem], exposure_time=precount_time, exposure_number = 1)
     # Take the pre-count data
     yield from bps.mv(shutter, 1)
-    ret = yield from bps.trigger_and_read(area_dets, name='precount')
+    ret = yield from bps.trigger_and_read([detector, quadem], name='precount')
     yield from bps.mv(shutter, 0)
     
     if ret is None:
         print('No count on the detector')
     else:
         # Read the maximum count on a pixel from the detector
-        i_total = ret['%s_stats2_total'%detector]['value'] # Total intensity of i2
+        i_total = ret['%s_stats2_total'%detector.name]['value'] # Total intensity of i2
+        print(f'Total intensity of ROI2 {i_total}')
 
-        i_max = ret['%s_stats5_max'%detector]['value'] # Maximum intensity of one pixel
+        # i_max = ret['%s_stats5_max'%detector]['value'] # Maximum intensity of one pixel
+        i_max = ret['%s_stats4_max_value'%detector.name]['value'] # Maximum intensity of one pixel
+        print(f'Max pixel intensity of ROI4 {i_max}')
 
-        att_keys = list(att_fact_selected.keys())
+        # att_keys = list(att_fact_selected.keys())
 
         abs2_current_position = abs2.position
 
         if i_max > upper_limit: # check the max_int for a pixel
             abs_target_position = abs_range[1]
-        elif i_total > therothold[1]: #check the roi intensity
+        elif i_total > total_threshold[1]: #check the roi intensity
             abs_target_position = abs2_current_position+1
         else:
             # check lower limit of abs_range
-            if abs2_current_position - abs_range[0] < tolerance (0.1): # stay at the current
+            if abs(abs2_current_position - abs_range[0]) < 0.1: # stay at the current
                 abs_target_position = abs2_current_position
                 # TODO here for exposure_time increase
             else:

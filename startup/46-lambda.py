@@ -74,7 +74,7 @@ lambda_det.stats3.total.kind = 'hinted'
 
 lambda_det.stats4.total.kind = 'hinted'
 lambda_det.stats4.kind = 'hinted'
-# lambda_det.stats4.max_value.kind = 'hinted'
+lambda_det.stats4.max_value.kind = 'hinted'
 
 lambda_det.stats5.kind = 'hinted'
 lambda_det.stats5.total.kind = 'hinted'
