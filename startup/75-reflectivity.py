@@ -549,7 +549,6 @@ def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, to
     Developed by Juan and Honghu.
     
     '''
-
     # Set the exposure time to for the pre-count
     # yield from det_exposure_time(precount_time, precount_time)
     yield from det_set_exposure([detector,quadem], exposure_time=precount_time, exposure_number = 1)
@@ -562,11 +561,13 @@ def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, to
         print('No count on the detector')
     else:
         # Read the maximum count on a pixel from the detector
-        i_total = ret['%s_stats2_total'%detector.name]['value'] # Total intensity of i2
+        # i_total = ret['%s_stats2_total'%detector.name]['value'] # Total intensity of i2
+        i_total = ret[f'{detector.name.split("_")[0]}_2']['value'] # Total intensity of i2
         print(f'Total intensity of ROI2 {i_total}')
 
         # i_max = ret['%s_stats5_max'%detector]['value'] # Maximum intensity of one pixel
-        i_max = ret['%s_stats4_max_value'%detector.name]['value'] # Maximum intensity of one pixel
+        # i_max = ret['%s_stats4_max_value'%detector.name]['value'] # Maximum intensity of one pixel
+        i_max = ret[f'{detector.name.split("_")[0]}_4']['value'] # Total intensity of i2
         print(f'Max pixel intensity of ROI4 {i_max}')
 
         # att_keys = list(att_fact_selected.keys())
@@ -585,4 +586,5 @@ def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, to
             else:
                 abs_target_position = abs2_current_position-1
         yield from bps.mv(abs2, abs_target_position)
+        print(f'change the abs2 to a new pos {abs_target_position}')
         yield from bps.sleep(2)
