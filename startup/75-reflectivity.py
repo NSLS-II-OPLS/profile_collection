@@ -73,7 +73,7 @@ def reflection_scan_full(scan_param, md=None, detector=lambda_det, tilt_stage=Fa
         yield from bps.close_run()
         bec.enable_plots()
         # puts in absorber to protect the detctor      
-        yield from bps.mv(abs2, 5)
+        yield from bps.mv(abs2, 6)
         quadem.averaging_time.put(1)
         print('The reflectivity scan is over')
     finally:
@@ -88,7 +88,7 @@ all_area_dets = [quadem, lambda_det, AD1, AD2, o2_per, chiller_T, ls]
 
 @bpp.stage_decorator(all_area_dets)
 
-def reflection_scan(scan_param, i, detector=lamda_det, md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, auto_atten = False, trough = None, compress = False, target_pressure=0):
+def reflection_scan(scan_param, i, detector=lambda_det, md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, auto_atten = False, trough = None, compress = False, target_pressure=0):
 
     alpha_start =   scan_param["start"][i]
     alpha_stop =    scan_param["stop"][i]
@@ -184,11 +184,12 @@ def reflection_scan(scan_param, i, detector=lamda_det, md={}, tilt_stage=False,x
             yield from bps.mv(attenuator_name_signal, att_bar1['name'][att])
 
     
-       ##### to use the new attenbank #### 
-        yield from bps.mv(abs2, atten_2)  
-        yield from bps.mv(attenuator_name_signal, f'att{atten_2}')
-        if att_fact_selected != None:
-            yield from bps.mv(attenuation_factor_signal, att_fact_selected[f'att{atten_2}'])
+        if not auto_atten:
+        ##### to use the new attenbank #### 
+            yield from bps.mv(abs2, atten_2)  
+            yield from bps.mv(attenuator_name_signal, f'att{atten_2}')
+            if att_fact_selected != None:
+                yield from bps.mv(attenuation_factor_signal, att_fact_selected[f'att{atten_2}'])
 
 
         # start_time = time.time()
@@ -209,11 +210,16 @@ def reflection_scan(scan_param, i, detector=lamda_det, md={}, tilt_stage=False,x
         if auto_atten:
             print('Start running automate attenuator')
             yield from automate_attenuator() ## set the abs2 based an automatica attenuation macro.
+            atten_2 = abs2.position
+            # yield from bps.mv(abs2, atten_2)  
+            yield from bps.mv(attenuator_name_signal, f'att{int(atten_2)}')
+            if att_fact_selected != None:
+                yield from bps.mv(attenuation_factor_signal, att_fact_selected[f'att{int(atten_2)}'])
         else:
             yield from bps.trigger_and_read([quadem],name='precount')
-        yield from det_set_exposure([detector, quadem], exposure_time=exp_time, exposure_number = 1)
+        # yield from det_set_exposure([detector, quadem], exposure_time=exp_time, exposure_number = 1)
     
-
+        yield from bps.mv(shutter, 1)
         yield from bps.trigger_and_read(all_area_dets +
                                             [geo] + 
                                             [S2] +
@@ -293,7 +299,7 @@ def reflection_scan_full_old(scan_param, md=None, detector=lambda_det, tilt_stag
     """
     Macros to set all the parameters in order to record all the required information for further analysis,
     such as the attenuation factors, detector='lambda_det'
-    :param detector: A string which is the detector name
+    :param detector: A string whiyield from bps.mv(abs2, atten_2)  ch is the detector name
     :type detector: string, can be either 'lambda_det' or 'pilatus100k'
     """
     # Tom's way of checking to see if all lists are the same length
@@ -366,7 +372,7 @@ all_area_dets = [quadem, lambda_det, AD1, AD2, o2_per, chiller_T]
 
 
 @bpp.stage_decorator(all_area_dets)
-def reflection_scan_old(scan_param, i, detector='lamda_det', md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, trough = None, compress = False, target_pressure=0):
+def reflection_scan_old(scan_param, i, detector='lambda_det', md={}, tilt_stage=False,x2_nominal=0,blocky_nominal=0, usekibron = False, trough = None, compress = False, target_pressure=0):
         
     alpha_start =   scan_param["start"][i]
     alpha_stop =    scan_param["stop"][i]
@@ -544,9 +550,19 @@ def reflection_scan_old(scan_param, i, detector='lamda_det', md={}, tilt_stage=F
         
 
 
-def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, total_threshold=[1e3, 1e5], abs_range =[1, 6]):
+def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=2e5, total_threshold=[1e4, 2e5], abs_range =[0, 6], exposure_time_limit=[10,30]):
     '''
     Developed by Juan and Honghu.
+    Frist test with beam on 04/08/2025
+
+    precount_time: Exposure time to get a frame based on the current attenuator for further calculation
+    detector: Detector object to take the shot and calculate the intensity in ROI2 and ROI4
+    upper_limit: Maximum intensity allowed for a pixel in ROI4
+    total_threshold: Lower and upper bound for desired intensity in ROI2
+    abs_range: Lower and upper bound for allowed attenuator
+    exposure_time_limit: 0: exposure_time limit for using current attenuator to increase statistics
+                         1: exposure_time limit for using lowest attenuator while protecting the samples
+
     
     '''
     # Set the exposure time to for the pre-count
@@ -567,24 +583,46 @@ def automate_attenuator(precount_time=1,detector=lambda_det, upper_limit=1e6, to
 
         # i_max = ret['%s_stats5_max'%detector]['value'] # Maximum intensity of one pixel
         # i_max = ret['%s_stats4_max_value'%detector.name]['value'] # Maximum intensity of one pixel
-        i_max = ret[f'{detector.name.split("_")[0]}_4']['value'] # Total intensity of i2
+        i_max = ret[f'{detector.name.split("_")[0]}_4']['value'] # Total intensity of i4
         print(f'Max pixel intensity of ROI4 {i_max}')
 
         # att_keys = list(att_fact_selected.keys())
 
         abs2_current_position = abs2.position
+        print(f'Current abs2 position: {abs2_current_position:.2f}')
 
         if i_max > upper_limit: # check the max_int for a pixel
-            abs_target_position = abs_range[1]
+            abs_target_position = abs2_current_position+1 
+            # TODO: keep the count rate per pixel less than 200k based on the lambda parameter; need to think about the exposure!
         elif i_total > total_threshold[1]: #check the roi intensity
             abs_target_position = abs2_current_position+1
         else:
             # check lower limit of abs_range
             if abs(abs2_current_position - abs_range[0]) < 0.1: # stay at the current
                 abs_target_position = abs2_current_position
-                # TODO here for exposure_time increase
+                print(f'Approaching the low limit of abs2')
+                exp_time_target = int(np.ceil(total_threshold[0]/i_total)) # protect the sample while sacrefice the statistics
+
+                if exp_time_target > exposure_time_limit[1]:
+                    exp_time_target = exposure_time_limit[1]
+
+                print(f'Target exposure time: {exp_time_target} s')
+
+                yield from det_set_exposure([detector, quadem], exposure_time=exp_time_target, exposure_number = 1)
+
+            elif  i_total > total_threshold[0]:
+                abs_target_position = abs2_current_position
+                print(f'To get better statistics')
+                exp_time_target = int(total_threshold[1]/i_total)
+                if exp_time_target > exposure_time_limit[0]:
+                    exp_time_target = exposure_time_limit[0]
+                print(f'Target exposure time: {exp_time_target} s')
+
+                yield from det_set_exposure([detector, quadem], exposure_time=exp_time_target, exposure_number = 1)
+
             else:
                 abs_target_position = abs2_current_position-1
+
         yield from bps.mv(abs2, abs_target_position)
         print(f'change the abs2 to a new pos {abs_target_position}')
         yield from bps.sleep(2)

@@ -94,7 +94,7 @@ pos1_z1 = -50
 # pos1_x1 = 4.72
 # pos1_z1 = 0
 
-pos2_y1 = 8.86ten_list = [0,2,2])
+pos2_y1 = 8.86
 pos2_x1 = 4.25
 pos2_z1 = 140
 
